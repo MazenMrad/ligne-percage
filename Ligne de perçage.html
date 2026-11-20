@@ -1,0 +1,747 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Ligne de perçage</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Mise en page : scène 3D à gauche, pupitre de commande à droite (empilés sur téléphone).
+   Code couleur : Ø1 = bleu, Ø2 = orange. Vert = capteur actif / marche. Rouge = arrêt. */
+:root{
+  --bg:#e9edf2; --surface:#ffffff; --fg:#121c28; --muted:#566678; --line:#d2dae4;
+  --accent:#1f5fd1; --accent-ink:#ffffff;
+  --d1:#1f5fd1; --d2:#d96a0a; --d1-soft:#e1eafb; --d2-soft:#fce8d6;
+  --ok:#138a47; --ok-ink:#ffffff; --crit:#c7352a; --crit-ink:#ffffff; --led-off:#b3bcc8;
+  --stage-hi:#f8fafc; --stage-lo:#dde4ec; --tag-bg:#ffffff; --tag-fg:#121c28;
+  --font:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0c1118; --surface:#141c26; --fg:#e4ebf3; --muted:#8fa0b4; --line:#263344;
+    --accent:#5b97ff; --accent-ink:#06111f;
+    --d1:#5b97ff; --d2:#ff9a45; --d1-soft:#16294a; --d2-soft:#3a2412;
+    --ok:#38d27c; --ok-ink:#06150c; --crit:#ff6f62; --crit-ink:#1c0805; --led-off:#3a4757;
+    --stage-hi:#1a2531; --stage-lo:#0e151d; --tag-bg:#141c26; --tag-fg:#e4ebf3;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0c1118; --surface:#141c26; --fg:#e4ebf3; --muted:#8fa0b4; --line:#263344;
+  --accent:#5b97ff; --accent-ink:#06111f;
+  --d1:#5b97ff; --d2:#ff9a45; --d1-soft:#16294a; --d2-soft:#3a2412;
+  --ok:#38d27c; --ok-ink:#06150c; --crit:#ff6f62; --crit-ink:#1c0805; --led-off:#3a4757;
+  --stage-hi:#1a2531; --stage-lo:#0e151d; --tag-bg:#141c26; --tag-fg:#e4ebf3;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--fg);
+  font-family:var(--font); font-size:14px; line-height:1.45;
+  padding-block:16px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+}
+.app{height:100%; display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:16px}
+
+/* Scène */
+.stage{
+  position:relative; min-width:0; min-height:360px; overflow:hidden;
+  border:1px solid var(--line); border-radius:10px;
+  background:radial-gradient(120% 95% at 50% 15%,var(--stage-hi),var(--stage-lo));
+}
+.stage canvas{display:block; width:100%; height:100%; touch-action:none}
+#tags{position:absolute; inset:0; pointer-events:none; overflow:hidden}
+.tag{
+  position:absolute; left:0; top:0; padding:3px 8px; border-radius:5px;
+  background:var(--tag-bg); color:var(--tag-fg); border:1px solid var(--line);
+  font-size:11.5px; font-weight:600; white-space:nowrap; will-change:transform;
+}
+.tag small{font-weight:400; color:var(--muted)}
+.tag.on small{color:inherit}
+.tag.on{background:var(--accent); color:var(--accent-ink); border-color:var(--accent)}
+.dot{display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; background:var(--muted)}
+.dot.d1{background:var(--d1)} .dot.d2{background:var(--d2)}
+.tag.on .dot{box-shadow:0 0 0 2px var(--accent-ink)}
+.views{
+  position:absolute; top:10px; right:10px; display:flex; gap:4px; padding:3px;
+  background:var(--surface); border:1px solid var(--line); border-radius:8px;
+}
+.views button{
+  font:inherit; font-size:12px; font-weight:600; color:var(--muted); background:transparent;
+  border:0; border-radius:5px; padding:5px 10px; cursor:pointer;
+}
+.views button[aria-pressed="true"]{background:var(--accent); color:var(--accent-ink)}
+.hint{position:absolute; left:12px; bottom:8px; margin:0; font-size:11.5px; color:var(--muted)}
+.fallback{position:absolute; inset:0; margin:0; display:grid; place-items:center; padding:24px; text-align:center; color:var(--muted)}
+
+/* Pupitre */
+.panel{min-width:0; display:flex; flex-direction:column; gap:18px; overflow-y:auto; padding-right:2px}
+.panel h1{margin:0; font-size:20px; line-height:1.2; font-weight:700; text-wrap:balance}
+.panel header p{margin:4px 0 0; color:var(--muted)}
+.panel h2{
+  margin:0 0 8px; font-size:11.5px; font-weight:600; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--muted);
+}
+.sec{padding-top:14px; border-top:1px solid var(--line)}
+button{font-family:inherit}
+button:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+.seg{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+.dia{
+  display:flex; flex-direction:column; align-items:flex-start; gap:2px; text-align:left;
+  padding:10px 12px; border-radius:8px; border:2px solid var(--line); background:var(--surface);
+  color:var(--fg); cursor:pointer;
+}
+.dia b{font-size:18px; font-weight:700}
+.dia span{font-size:12px; color:var(--muted)}
+.dia[data-d="1"][aria-pressed="true"]{border-color:var(--d1); background:var(--d1-soft)}
+.dia[data-d="2"][aria-pressed="true"]{border-color:var(--d2); background:var(--d2-soft)}
+.dia[data-d="1"] b{color:var(--d1)} .dia[data-d="2"] b{color:var(--d2)}
+.info{margin:8px 0 0; font-size:12.5px; color:var(--muted)}
+.run{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+.btn{
+  padding:11px 12px; border-radius:8px; border:1px solid transparent; font-size:15px; font-weight:700;
+  cursor:pointer;
+}
+.btn.start{background:var(--ok); color:var(--ok-ink)}
+.btn.stop{background:var(--crit); color:var(--crit-ink)}
+.btn:disabled{opacity:.4; cursor:not-allowed}
+.btn.ghost{
+  grid-column:1/-1; background:transparent; color:var(--muted); border-color:var(--line);
+  font-size:13px; font-weight:600; padding:7px 10px;
+}
+.state{display:flex; align-items:center; gap:8px; margin:12px 0 4px; font-weight:700}
+.state i{width:10px; height:10px; border-radius:50%; background:var(--led-off)}
+.state[data-s="run"] i{background:var(--ok); box-shadow:0 0 0 4px color-mix(in srgb,var(--ok) 25%,transparent)}
+.state[data-s="stop"] i{background:var(--crit)}
+#msg{margin:0; min-height:3em}
+
+/* Étapes */
+.steps{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:7px}
+.steps li{display:flex; gap:10px; align-items:center; color:var(--muted)}
+.mk{
+  flex:none; width:22px; height:22px; border-radius:50%; display:grid; place-items:center;
+  border:1.5px solid var(--line); font-size:11.5px; font-weight:700; font-family:var(--mono);
+}
+.steps li[data-st="active"]{color:var(--fg); font-weight:600}
+.steps li[data-st="active"] .mk{background:var(--accent); border-color:var(--accent); color:var(--accent-ink)}
+.steps li[data-st="done"] .mk{background:var(--ok); border-color:var(--ok); color:var(--ok-ink)}
+.steps li[data-st="done"]{color:var(--fg)}
+
+/* Capteurs */
+.sens{list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:6px}
+.sens li{
+  display:flex; align-items:center; gap:8px; padding:6px 8px; border:1px solid var(--line);
+  border-radius:6px; background:var(--surface); font-size:12.5px;
+}
+.sens li b{font-family:var(--mono); font-weight:500}
+.sens li i{flex:none; width:10px; height:10px; border-radius:50%; background:var(--led-off)}
+.sens li.on{border-color:var(--ok)}
+.sens li.on i{background:var(--ok); box-shadow:0 0 0 4px color-mix(in srgb,var(--ok) 28%,transparent)}
+.count{display:flex; gap:18px; font-variant-numeric:tabular-nums}
+.count div{display:flex; flex-direction:column}
+.count b{font-family:var(--mono); font-size:20px; font-weight:500}
+.count span{font-size:12px; color:var(--muted)}
+
+@media (max-width:900px){
+  html,body{height:auto; min-height:100%}
+  .app{display:flex; flex-direction:column; height:auto}
+  .stage{height:62vh; min-height:340px; flex:none}
+  .panel{overflow:visible}
+}
+@media (max-width:560px){
+  .tag{font-size:10px; padding:2px 5px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important; animation:none!important}}
+</style>
+
+<main class="app">
+  <section class="stage" id="stage" aria-label="Maquette 3D de la ligne de perçage">
+    <canvas id="gl"></canvas>
+    <div id="tags"></div>
+    <div class="views" role="group" aria-label="Point de vue">
+      <button type="button" data-v="iso" aria-pressed="true">3D</button>
+      <button type="button" data-v="face" aria-pressed="false">Face</button>
+      <button type="button" data-v="top" aria-pressed="false">Dessus</button>
+    </div>
+    <p class="hint">Glisser pour tourner, molette ou pincer pour zoomer</p>
+  </section>
+
+  <aside class="panel">
+    <header>
+      <h1>Ligne de perçage</h1>
+      <p>Perçage, collage et étiquetage de pièces métalliques.</p>
+    </header>
+
+    <section class="sec">
+      <h2>Diamètre de perçage</h2>
+      <div class="seg">
+        <button type="button" class="dia" id="btnD1" data-d="1" aria-pressed="true"><b>Diamètre 1</b><span>Poste de perçage 1</span></button>
+        <button type="button" class="dia" id="btnD2" data-d="2" aria-pressed="false"><b>Diamètre 2</b><span>Poste de perçage 2</span></button>
+      </div>
+      <p class="info" id="info"></p>
+    </section>
+
+    <section class="sec">
+      <h2>Marche</h2>
+      <div class="run">
+        <button type="button" class="btn start" id="btnStart">Start</button>
+        <button type="button" class="btn stop" id="btnStop" disabled>Stop</button>
+        <button type="button" class="btn ghost" id="btnReset">Réinitialiser la ligne</button>
+      </div>
+      <div class="state" id="state" data-s="idle"><i></i><span id="stateTxt">Prêt</span></div>
+      <p id="msg" aria-live="polite"></p>
+    </section>
+
+    <section class="sec">
+      <h2>Étapes de la pièce</h2>
+      <ol class="steps" id="steps"></ol>
+    </section>
+
+    <section class="sec">
+      <h2>Capteurs</h2>
+      <ul class="sens" id="sens"></ul>
+    </section>
+
+    <section class="sec">
+      <h2>Production</h2>
+      <div class="count">
+        <div><b id="c1">0</b><span>Pièces Ø1</span></div>
+        <div><b id="c2">0</b><span>Pièces Ø2</span></div>
+        <div><b id="ct">0</b><span>Total</span></div>
+      </div>
+    </section>
+  </aside>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function(){
+'use strict';
+var $=function(s){return document.querySelector(s)};
+var stage=$('#stage'), canvas=$('#gl');
+var renderer;
+try{
+  renderer=new THREE.WebGLRenderer({canvas:canvas,antialias:true,alpha:true});
+}catch(e){
+  stage.insertAdjacentHTML('beforeend','<p class="fallback">La vue 3D demande WebGL, indisponible sur cet appareil.</p>');
+  return;
+}
+var V3=THREE.Vector3;
+renderer.setClearColor(0x000000,0);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.outputEncoding=THREE.sRGBEncoding;
+
+var scene=new THREE.Scene();
+var world=new THREE.Group(); scene.add(world);
+var camera=new THREE.PerspectiveCamera(36,1.6,0.1,120);
+var controls=new THREE.OrbitControls(camera,canvas);
+controls.enableDamping=true; controls.dampingFactor=0.08;
+controls.maxPolarAngle=Math.PI*0.495; controls.minDistance=6; controls.maxDistance=45;
+
+scene.add(new THREE.HemisphereLight(0xffffff,0x8794a6,0.9));
+var sun=new THREE.DirectionalLight(0xffffff,0.95);
+sun.position.set(6,14,9); sun.castShadow=true; sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.left=-15; sun.shadow.camera.right=15; sun.shadow.camera.top=10; sun.shadow.camera.bottom=-10;
+sun.shadow.camera.near=1; sun.shadow.camera.far=45; sun.shadow.bias=-0.0006;
+scene.add(sun);
+var floor=new THREE.Mesh(new THREE.PlaneGeometry(70,40),new THREE.ShadowMaterial({opacity:0.22}));
+floor.rotation.x=-Math.PI/2; floor.position.y=0.001; floor.receiveShadow=true; scene.add(floor);
+
+/* ---------- constantes de la ligne ---------- */
+var BELT_Y=1.2, PLATE_H=0.1, PLATE_W=1.2, PLATE_D=0.9, GLUE_OFF=0.42;
+var HOLE_R={1:0.11,2:0.19};
+var BX0=-8.6, BX1=7.0, RX0=-10.4;
+var TIP0=-8.1, TIP1=-6.9, SPAWN_X=-7.5, EXIT_X=6.9;
+var STN=[
+  {key:'drill1',px:-4.6,short:'Perçage 1'},
+  {key:'drill2',px:-2.4,short:'Perçage 2'},
+  {key:'glue',  px:-0.2,short:'Collage'},
+  {key:'label1',px:2.0, short:'Étiquetage 1'},
+  {key:'label2',px:4.2, short:'Étiquetage 2'}
+];
+
+/* ---------- matériaux et helpers ---------- */
+function M(color,o){return new THREE.MeshStandardMaterial(Object.assign({color:color,roughness:0.5,metalness:0.2},o||{}));}
+var mats={
+  alu:M(0xb9c1ca,{roughness:0.42,metalness:0.55}),
+  dark:M(0x262b32,{roughness:0.6,metalness:0.3}),
+  blue:M(0x1f5fd1,{roughness:0.45,metalness:0.25}),
+  steel:M(0xd5dbe1,{roughness:0.3,metalness:0.7}),
+  yellow:M(0xf2c21b,{roughness:0.5}),
+  black:M(0x15181c,{roughness:0.8}),
+  paper:M(0xf6f3ea,{roughness:0.9,metalness:0}),
+  glue:M(0xf2b92d,{roughness:0.2,metalness:0}),
+  plate:M(0xaab3bd,{roughness:0.35,metalness:0.5}),
+  hose:M(0x2a6bff,{roughness:0.5,metalness:0.1})
+};
+function box(w,h,d,m,x,y,z,p){
+  var me=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);
+  me.position.set(x||0,y||0,z||0); (p||world).add(me); return me;
+}
+function cyl(rt,rb,h,m,x,y,z,p,rot){
+  var me=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,28),m);
+  me.position.set(x||0,y||0,z||0);
+  if(rot) me.rotation.set(rot[0],rot[1],rot[2]);
+  (p||world).add(me); return me;
+}
+
+/* ---------- convoyeur ---------- */
+var SEG=0.6;
+var beltCanvas=document.createElement('canvas'); beltCanvas.width=64; beltCanvas.height=64;
+(function(){
+  var c=beltCanvas.getContext('2d');
+  c.fillStyle='#2a6bff'; c.fillRect(0,0,64,64);
+  c.fillStyle='#1b4fb8'; c.fillRect(0,0,5,64);
+  c.fillStyle='#3a78ff'; c.fillRect(5,0,3,64);
+})();
+var beltTex=new THREE.CanvasTexture(beltCanvas);
+beltTex.encoding=THREE.sRGBEncoding;
+beltTex.wrapS=beltTex.wrapT=THREE.RepeatWrapping;
+beltTex.repeat.set((BX1-BX0)/SEG,1);
+var beltSide=M(0x1f5fd1,{roughness:0.6});
+var belt=new THREE.Mesh(new THREE.BoxGeometry(BX1-BX0,0.1,1.6),
+  [beltSide,beltSide,new THREE.MeshStandardMaterial({map:beltTex,roughness:0.65,metalness:0.05}),beltSide,beltSide,beltSide]);
+belt.position.set((BX0+BX1)/2,1.15,0); world.add(belt);
+[BX0,BX1].forEach(function(x){ cyl(0.14,0.14,1.7,mats.steel,x,1.06,0,world,[Math.PI/2,0,0]); });
+
+[-1,1].forEach(function(s){
+  box(BX1-RX0,0.22,0.2,mats.alu,(BX1+RX0)/2,1.04,s*0.93);
+  box(6.4+8.0,0.14,0.14,mats.alu,(6.4-8.0)/2,0.55,s*0.85);
+});
+box(BX0-RX0,0.08,1.6,mats.alu,(RX0+BX0)/2,1.11,0);
+[-8.0,-4.0,0.0,4.0,6.4].forEach(function(x){
+  box(0.14,0.14,1.7,mats.alu,x,0.55,0);
+  [-1,1].forEach(function(s){
+    box(0.24,0.81,0.24,mats.alu,x,0.525,s*0.85);
+    cyl(0.2,0.2,0.12,mats.black,x,0.06,s*0.85);
+  });
+});
+
+/* ---------- actionneur linéaire C3 (pousseur) ---------- */
+cyl(0.26,0.26,1.5,mats.alu,-9.55,1.75,0,world,[0,0,Math.PI/2]);
+cyl(0.3,0.3,0.2,mats.blue,-10.3,1.75,0,world,[0,0,Math.PI/2]);
+cyl(0.3,0.3,0.2,mats.blue,-8.8,1.75,0,world,[0,0,Math.PI/2]);
+box(0.3,0.3,0.5,mats.alu,-9.85,1.34,0);
+box(0.3,0.3,0.5,mats.alu,-9.0,1.34,0);
+var rod=cyl(0.07,0.07,2.1,mats.steel,0,1.75,0,world,[0,0,Math.PI/2]);
+var pushHead=box(0.1,0.52,0.8,mats.dark,0,1.47,0);
+function setTip(t){ rod.position.x=t-1.05; pushHead.position.x=t-0.05; }
+setTip(TIP0);
+
+/* ---------- postes ---------- */
+function column(x,topY){
+  var h=topY-1.0;
+  box(0.3,h,0.3,mats.alu,x,1.0+h/2,-1.15);
+  box(0.9,0.1,0.8,mats.alu,x,1.1,-1.1);
+}
+function labelTex(d){
+  var c=document.createElement('canvas'); c.width=c.height=128;
+  var g=c.getContext('2d');
+  g.fillStyle='#ffffff'; g.fillRect(0,0,128,128);
+  g.fillStyle=d===1?'#1f5fd1':'#e8710a'; g.fillRect(0,0,128,34);
+  g.strokeStyle='#9aa4b0'; g.lineWidth=4; g.strokeRect(2,2,124,124);
+  g.fillStyle='#111'; g.font='700 62px "IBM Plex Sans",Arial,sans-serif';
+  g.textAlign='center'; g.textBaseline='middle'; g.fillText('Ø'+d,64,82);
+  var t=new THREE.CanvasTexture(c); t.encoding=THREE.sRGBEncoding; return t;
+}
+var labelMat={
+  1:new THREE.MeshStandardMaterial({map:labelTex(1),roughness:0.8}),
+  2:new THREE.MeshStandardMaterial({map:labelTex(2),roughness:0.8})
+};
+
+var drills={};
+function buildDrill(st,d){
+  var x=st.px, bitR=HOLE_R[d];
+  column(x,4.6);
+  box(0.38,0.32,0.95,mats.alu,x,3.35,-0.75);
+  box(0.66,0.95,0.66,mats.blue,x,3.3,0);
+  cyl(0.3,0.3,0.6,mats.blue,x+0.1,4.1,-0.1);
+  cyl(0.07,0.07,0.45,mats.black,x-0.4,3.6,0.18);
+  cyl(0.07,0.07,0.45,mats.black,x-0.4,3.6,-0.18);
+  var sp=new THREE.Group(); sp.position.set(x,3.0,0); world.add(sp);
+  cyl(0.11,0.11,0.35,mats.steel,0,-0.1,0,sp);
+  var spin=new THREE.Group(); spin.position.y=-0.3; sp.add(spin);
+  cyl(0.15,0.15,0.2,mats.dark,0,0,0,spin);
+  cyl(0.165,0.165,0.04,new THREE.MeshStandardMaterial({color:d===1?0x1f5fd1:0xe8710a,roughness:0.5}),0,0.12,0,spin);
+  box(0.06,0.06,0.34,mats.dark,0,0,0,spin);
+  cyl(bitR,bitR,0.55,mats.steel,0,-0.375,0,spin);
+  drills[d]={sp:sp,spin:spin,up:3.0,down:2.15};
+}
+buildDrill(STN[0],1);
+buildDrill(STN[1],2);
+
+var glueObj;
+(function(){
+  var tx=STN[2].px+GLUE_OFF;
+  column(tx,4.6);
+  box(0.4,0.3,0.95,mats.dark,tx,3.4,-0.75);
+  box(0.5,0.75,0.5,mats.dark,tx,3.3,0);
+  cyl(0.2,0.2,0.25,mats.blue,tx,3.8,0);
+  var ng=new THREE.Group(); ng.position.set(tx,2.9,0); world.add(ng);
+  cyl(0.09,0.09,0.8,mats.alu,0,0.1,0,ng);
+  cyl(0.02,0.07,0.3,mats.steel,0,-0.45,0,ng);
+  var curve=new THREE.CatmullRomCurve3([
+    new V3(tx+0.05,3.95,0.05),new V3(tx+0.4,4.5,-0.1),new V3(tx+0.9,4.4,-0.4),
+    new V3(tx+1.1,3.4,-0.8),new V3(tx+1.1,2.2,-1.05)]);
+  world.add(new THREE.Mesh(new THREE.TubeGeometry(curve,48,0.045,8,false),mats.hose));
+  glueObj={ng:ng,up:2.9,down:2.1};
+})();
+
+var labelers={};
+function buildLabeler(st,d){
+  var tx=st.px+GLUE_OFF;
+  column(tx,4.8);
+  box(0.4,0.3,0.95,mats.alu,tx,3.6,-0.75);
+  box(0.62,0.9,0.62,mats.dark,tx,3.65,0);
+  cyl(0.2,0.2,0.45,mats.blue,tx,4.3,0);
+  var reel=new THREE.Group(); reel.position.set(tx+0.95,3.95,-0.55); world.add(reel);
+  cyl(0.62,0.62,0.34,mats.paper,0,0,0,reel,[Math.PI/2,0,0]);
+  cyl(0.16,0.16,0.4,mats.dark,0,0,0,reel,[Math.PI/2,0,0]);
+  var sp=new THREE.Group(); sp.position.set(tx,3.3,0); world.add(sp);
+  cyl(0.07,0.07,0.75,mats.steel,0,-0.35,0,sp);
+  box(0.44,0.07,0.38,mats.dark,0,-0.76,0,sp);
+  var pad=new THREE.Mesh(new THREE.BoxGeometry(0.3,0.012,0.3),labelMat[d]);
+  pad.position.y=-0.801; sp.add(pad);
+  labelers[d]={sp:sp,pad:pad,up:3.3,down:2.16};
+}
+buildLabeler(STN[3],1);
+buildLabeler(STN[4],2);
+
+/* ---------- sortie (goulotte) ---------- */
+(function(){
+  var g=new THREE.Group(); g.position.set(6.95,BELT_Y-0.03,0); g.rotation.z=-0.46; world.add(g);
+  box(1.95,0.06,1.4,mats.alu,0.97,0,0,g);
+  box(1.95,0.2,0.05,mats.alu,0.97,0.1,0.7,g);
+  box(1.95,0.2,0.05,mats.alu,0.97,0.1,-0.7,g);
+})();
+
+/* ---------- capteurs (un par poste) ---------- */
+var sensors=STN.map(function(st){
+  var g=new THREE.Group(); g.position.set(st.px,0,0); world.add(g);
+  box(0.26,0.34,0.2,mats.yellow,0,0.78,1.13,g);
+  box(0.16,0.06,0.04,mats.dark,0,0.86,1.25,g);
+  var led=new THREE.Mesh(new THREE.SphereGeometry(0.05,16,12),
+    new THREE.MeshStandardMaterial({color:0x3a4350,emissive:0x000000,roughness:0.4}));
+  led.position.set(0,0.7,1.25); g.add(led);
+  var bg=new THREE.PlaneGeometry(0.07,1.62); bg.rotateX(-Math.PI/2);
+  var beam=new THREE.Mesh(bg,new THREE.MeshBasicMaterial({color:0xf2c21b,transparent:true,opacity:0.3,depthWrite:false}));
+  beam.position.set(0,BELT_Y+0.006,0); g.add(beam);
+  return {led:led,beam:beam,on:false};
+});
+
+world.traverse(function(o){ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
+
+/* ---------- pièce ---------- */
+function plateGeo(r){
+  var s=new THREE.Shape(), w=PLATE_W/2, d=PLATE_D/2;
+  s.moveTo(-w,-d); s.lineTo(w,-d); s.lineTo(w,d); s.lineTo(-w,d); s.lineTo(-w,-d);
+  if(r){ var h=new THREE.Path(); h.absarc(0,0,r,0,Math.PI*2,true); s.holes.push(h); }
+  var g=new THREE.ExtrudeGeometry(s,{depth:PLATE_H,bevelEnabled:false,curveSegments:32});
+  g.rotateX(-Math.PI/2);
+  return g;
+}
+function makePiece(d){
+  var group=new THREE.Group();
+  var plate=new THREE.Mesh(plateGeo(0),mats.plate); plate.castShadow=true; plate.receiveShadow=true; group.add(plate);
+  var glue=new THREE.Mesh(new THREE.SphereGeometry(0.13,24,12),mats.glue);
+  glue.scale.set(0.01,0.25,0.01); glue.position.set(GLUE_OFF,PLATE_H+0.01,0); glue.visible=false; group.add(glue);
+  var label=new THREE.Mesh(new THREE.BoxGeometry(0.3,0.012,0.3),labelMat[d]);
+  label.position.set(GLUE_OFF,PLATE_H+0.045,0); label.visible=false; group.add(label);
+  scene.add(group);
+  return {group:group,plate:plate,glue:glue,label:label};
+}
+function disposePiece(p){
+  scene.remove(p.group);
+  p.plate.geometry.dispose(); p.glue.geometry.dispose(); p.label.geometry.dispose();
+}
+
+/* ---------- animation par générateurs (pause = DT nul) ---------- */
+var DT=0;
+function ease(k){ return k<0.5?2*k*k:1-Math.pow(-2*k+2,2)/2; }
+function* tween(dur,fn){
+  var t=0;
+  while(t<dur){ t+=DT; fn(Math.min(t/dur,1)); yield; }
+  fn(1);
+}
+function* wait(s){ yield* tween(s,function(){}); }
+
+var selD=1, running=false, started=false, runner=null, cur=null, piece=null, moving=false, idleT=0;
+var done={1:0,2:0};
+var act={push:false,drill1:false,drill2:false,glue:false,label1:false,label2:false};
+var stepState=['todo','todo','todo','todo','todo'];
+var msgBase='Choisissez le diamètre 1 ou 2, puis appuyez sur Start.';
+
+function setMsg(t){ msgBase=t; }
+function setStep(i,s){ stepState[i]=s; }
+
+function* moveTo(x,speed){
+  var g=piece.group, x0=g.position.x, dur=Math.abs(x-x0)/(speed||2.1);
+  moving=true;
+  yield* tween(dur,function(k){
+    var nx=x0+(x-x0)*ease(k);
+    beltTex.offset.x-=(nx-g.position.x)/SEG;
+    g.position.x=nx;
+  });
+  moving=false;
+}
+function* drillStep(dr,d){
+  var holed=false;
+  yield* tween(0.75,function(k){
+    dr.sp.position.y=dr.up+(dr.down-dr.up)*ease(k);
+    dr.spin.rotation.y+=DT*50;
+    if(!holed && dr.sp.position.y-0.95<=BELT_Y+PLATE_H){
+      holed=true; piece.plate.geometry.dispose(); piece.plate.geometry=plateGeo(HOLE_R[d]);
+    }
+  });
+  yield* tween(0.4,function(){ dr.spin.rotation.y+=DT*50; });
+  yield* tween(0.65,function(k){
+    dr.sp.position.y=dr.down+(dr.up-dr.down)*ease(k);
+    dr.spin.rotation.y+=DT*50;
+  });
+}
+function* glueStep(){
+  var g=glueObj;
+  yield* tween(0.55,function(k){ g.ng.position.y=g.up+(g.down-g.up)*ease(k); });
+  piece.glue.visible=true;
+  yield* tween(0.7,function(k){ var s=0.01+0.99*ease(k); piece.glue.scale.set(s,0.25,s); });
+  yield* wait(0.15);
+  yield* tween(0.5,function(k){ g.ng.position.y=g.down+(g.up-g.down)*ease(k); });
+}
+function* labelStep(lb){
+  yield* tween(0.7,function(k){ lb.sp.position.y=lb.up+(lb.down-lb.up)*ease(k); });
+  piece.label.visible=true; lb.pad.visible=false;
+  yield* wait(0.3);
+  yield* tween(0.6,function(k){ lb.sp.position.y=lb.down+(lb.up-lb.down)*ease(k); });
+  lb.pad.visible=true;
+}
+
+function* cycle(d){
+  cur={d:d};
+  stepState=['todo','todo','todo','todo','todo'];
+  var dk='drill'+d, lk='label'+(d), dst=STN[d-1], lst=STN[d+2];
+  piece=makePiece(d);
+  piece.group.position.set(SPAWN_X,BELT_Y+1.0,0);
+
+  setStep(0,'active'); setMsg('Une pièce arrive sur le convoyeur.');
+  yield* tween(0.45,function(k){ piece.group.position.y=BELT_Y+1.0*(1-k*k); });
+  act.push=true; setMsg("L'actionneur linéaire C3 pousse la pièce sur le convoyeur.");
+  yield* tween(0.7,function(k){
+    var t=TIP0+(TIP1-TIP0)*ease(k); setTip(t); piece.group.position.x=t+0.6;
+  });
+  yield* tween(0.6,function(k){ setTip(TIP1+(TIP0-TIP1)*ease(k)); });
+  act.push=false; setStep(0,'done');
+
+  setMsg('Le convoyeur amène la pièce au poste de perçage '+d+'.');
+  yield* moveTo(dst.px);
+  setStep(1,'active'); act[dk]=true;
+  setMsg('Capteur S'+d+' : pièce détectée. Le convoyeur s’arrête, perçage du diamètre '+d+'.');
+  yield* wait(0.25);
+  yield* drillStep(drills[d],d);
+  act[dk]=false; setStep(1,'done');
+
+  setMsg('Le convoyeur amène la pièce au poste de collage.');
+  yield* moveTo(STN[2].px);
+  setStep(2,'active'); act.glue=true;
+  setMsg('Capteur S3 : pièce détectée. Dépose de colle juste à côté du trou.');
+  yield* wait(0.25);
+  yield* glueStep();
+  act.glue=false; setStep(2,'done');
+
+  setMsg("Le convoyeur amène la pièce au poste d'étiquetage "+d+'.');
+  yield* moveTo(lst.px);
+  setStep(3,'active'); act[lk]=true;
+  setMsg('Capteur S'+(d+3)+' : pièce détectée. Pose de l’étiquette Ø'+d+' sur la colle.');
+  yield* wait(0.25);
+  yield* labelStep(labelers[d]);
+  act[lk]=false; setStep(3,'done');
+
+  setStep(4,'active'); setMsg('La pièce est évacuée vers la sortie.');
+  yield* moveTo(EXIT_X);
+  var g=piece.group;
+  yield* tween(1.0,function(k){
+    var x=EXIT_X+1.5*ease(k);
+    g.position.x=x; g.position.y=BELT_Y-(x-EXIT_X)*0.495;
+    g.rotation.z=-0.46*Math.min(1,k*3);
+  });
+  yield* tween(0.35,function(k){ g.scale.setScalar(Math.max(0.001,1-k)); });
+  disposePiece(piece); piece=null;
+  done[d]++; setStep(4,'done');
+  setMsg('Pièce Ø'+d+' terminée : percée, collée, étiquetée.');
+  cur=null;
+}
+
+/* ---------- interface ---------- */
+var stepEls=[], sensEls=[];
+(function(){
+  var ol=$('#steps');
+  for(var i=0;i<5;i++){
+    var li=document.createElement('li'); li.dataset.st='todo';
+    li.innerHTML='<span class="mk"></span><span class="tx"></span>';
+    ol.appendChild(li); stepEls.push(li);
+  }
+  var ul=$('#sens');
+  STN.forEach(function(st,i){
+    var li=document.createElement('li');
+    li.innerHTML='<i></i><b>S'+(i+1)+'</b><span>'+st.short+'</span>';
+    ul.appendChild(li); sensEls.push(li);
+  });
+})();
+function stepTexts(d){
+  return ['Poussée par l’actionneur C3','Perçage Ø'+d+' (poste '+d+')','Collage à côté du trou','Étiquette Ø'+d+' (poste '+d+')','Sortie des pièces'];
+}
+var shownMsg='';
+function updateUI(){
+  var d=cur?cur.d:selD, tx=stepTexts(d);
+  stepEls.forEach(function(li,i){
+    li.dataset.st=stepState[i];
+    li.querySelector('.mk').textContent=stepState[i]==='done'?'✓':String(i+1);
+    li.querySelector('.tx').textContent=tx[i];
+  });
+  $('#c1').textContent=done[1]; $('#c2').textContent=done[2]; $('#ct').textContent=done[1]+done[2];
+  $('#btnStart').disabled=running; $('#btnStop').disabled=!running;
+  var st=$('#state'); st.dataset.s=running?'run':(started?'stop':'idle');
+  $('#stateTxt').textContent=running?'En marche':(started?'Arrêté, ligne en pause':'Prêt');
+  $('#info').textContent=(cur?'Pièce en cours : Ø'+cur.d+'. ':'')+'Prochaine pièce : Ø'+selD+'.';
+  $('#btnD1').setAttribute('aria-pressed',String(selD===1));
+  $('#btnD2').setAttribute('aria-pressed',String(selD===2));
+}
+function refreshMsg(){
+  var t=msgBase;
+  if(running && moving && cur){
+    for(var i=0;i<sensors.length;i++){
+      if(sensors[i].on){
+        var used=(i===cur.d-1)||i===2||i===cur.d+2;
+        t='Capteur S'+(i+1)+' ('+STN[i].short+') : pièce détectée'+(used?'.':', poste non utilisé pour le diamètre '+cur.d+'. La pièce continue.');
+        break;
+      }
+    }
+  }
+  if(!running && started) t='En pause. '+t;
+  if(t!==shownMsg){ shownMsg=t; $('#msg').textContent=t; }
+}
+function resetAll(){
+  running=false; started=false; runner=null; cur=null; moving=false; idleT=0;
+  if(piece){ disposePiece(piece); piece=null; }
+  setTip(TIP0);
+  [1,2].forEach(function(d){ drills[d].sp.position.y=drills[d].up; labelers[d].sp.position.y=labelers[d].up; labelers[d].pad.visible=true; });
+  glueObj.ng.position.y=glueObj.up;
+  Object.keys(act).forEach(function(k){ act[k]=false; });
+  stepState=['todo','todo','todo','todo','todo'];
+  done[1]=0; done[2]=0;
+  msgBase='Choisissez le diamètre 1 ou 2, puis appuyez sur Start.';
+  updateUI(); refreshMsg();
+}
+$('#btnD1').addEventListener('click',function(){ selD=1; updateUI(); });
+$('#btnD2').addEventListener('click',function(){ selD=2; updateUI(); });
+$('#btnStart').addEventListener('click',function(){ running=true; started=true; updateUI(); });
+$('#btnStop').addEventListener('click',function(){ running=false; updateUI(); });
+$('#btnReset').addEventListener('click',resetAll);
+
+/* ---------- étiquettes flottantes ---------- */
+var tagDefs=[
+  {id:'push',  html:'Actionneur linéaire <small>(pousseur C3)</small>', pos:[-9.55,2.6,0]},
+  {id:'drill1',html:'<i class="dot d1"></i>Poste de perçage 1', pos:[-4.6,5.0,0]},
+  {id:'drill2',html:'<i class="dot d2"></i>Poste de perçage 2', pos:[-2.4,5.0,0]},
+  {id:'glue',  html:'Poste de collage', pos:[0.22,5.2,0]},
+  {id:'label1',html:'<i class="dot d1"></i>Poste d’étiquetage 1', pos:[2.42,5.3,0]},
+  {id:'label2',html:'<i class="dot d2"></i>Poste d’étiquetage 2', pos:[4.62,5.3,0]},
+  {id:'exit',  html:'Sortie des pièces', pos:[8.0,0.55,0]}
+];
+var tagsHost=$('#tags');
+var tags=tagDefs.map(function(t){
+  var el=document.createElement('div'); el.className='tag'; el.innerHTML=t.html; tagsHost.appendChild(el);
+  return {id:t.id,pos:new V3(t.pos[0],t.pos[1],t.pos[2]),el:el};
+});
+
+/* ---------- vues ---------- */
+var VIEWS={
+  iso:{t:[-0.8,1.9,0],o:[6.3,6.3,18.5]},
+  face:{t:[-0.8,2.0,0],o:[0,0.6,20]},
+  top:{t:[-0.8,0.8,0],o:[0,24,2.5]}
+};
+var camAnim=null, W=1, H=1;
+function applyView(name,instant){
+  var v=VIEWS[name], k=Math.min(Math.max(1.55/camera.aspect,1),2.6);
+  var t=new V3(v.t[0],v.t[1],v.t[2]);
+  var p=t.clone().add(new V3(v.o[0],v.o[1],v.o[2]).multiplyScalar(k));
+  if(instant){ camera.position.copy(p); controls.target.copy(t); controls.update(); return; }
+  camAnim={t:0,p0:camera.position.clone(),p1:p,t0:controls.target.clone(),t1:t};
+}
+Array.prototype.forEach.call(document.querySelectorAll('.views button'),function(b){
+  b.addEventListener('click',function(){
+    Array.prototype.forEach.call(document.querySelectorAll('.views button'),function(o){ o.setAttribute('aria-pressed',String(o===b)); });
+    applyView(b.dataset.v,false);
+  });
+});
+function resize(){
+  W=Math.max(1,stage.clientWidth); H=Math.max(1,stage.clientHeight);
+  renderer.setSize(W,H,false);
+  camera.aspect=W/H; camera.updateProjectionMatrix();
+}
+if(window.ResizeObserver){ new ResizeObserver(resize).observe(stage); }
+window.addEventListener('resize',resize);
+
+/* ---------- boucle ---------- */
+var last=performance.now(), tmp=new V3();
+function frame(now){
+  var dt=Math.min((now-last)/1000,0.05); last=now;
+  DT=running?dt:0;
+  if(running){
+    if(!runner){
+      idleT-=dt;
+      if(idleT<=0){ runner=cycle(selD); updateUI(); }
+    }
+    if(runner){
+      var r=runner.next();
+      if(r.done){ runner=null; idleT=0.7; }
+    }
+  }
+  /* capteurs */
+  var changed=false;
+  for(var i=0;i<sensors.length;i++){
+    var s=sensors[i];
+    var on=!!piece && Math.abs(piece.group.position.x-STN[i].px)<0.6 && piece.group.position.y<BELT_Y+0.3;
+    if(on!==s.on){
+      s.on=on; changed=true;
+      s.led.material.color.set(on?0x3dff8a:0x3a4350);
+      s.led.material.emissive.set(on?0x2cff7a:0x000000);
+      s.led.material.emissiveIntensity=on?1.4:0;
+      s.beam.material.color.set(on?0x3dff8a:0xf2c21b);
+      s.beam.material.opacity=on?0.9:0.3;
+      sensEls[i].classList.toggle('on',on);
+    }
+  }
+  updateUI(); refreshMsg();
+  if(camAnim){
+    camAnim.t=Math.min(1,camAnim.t+(dt)/0.7);
+    var e=ease(camAnim.t);
+    camera.position.lerpVectors(camAnim.p0,camAnim.p1,e);
+    controls.target.lerpVectors(camAnim.t0,camAnim.t1,e);
+    if(camAnim.t>=1) camAnim=null;
+  }
+  controls.update();
+  renderer.render(scene,camera);
+  for(var j=0;j<tags.length;j++){
+    var t=tags[j];
+    tmp.copy(t.pos).project(camera);
+    t.el.style.visibility=(tmp.z<1)?'visible':'hidden';
+    t.el.style.transform='translate('+((tmp.x*0.5+0.5)*W).toFixed(1)+'px,'+((-tmp.y*0.5+0.5)*H).toFixed(1)+'px) translate(-50%,-100%)';
+    t.el.classList.toggle('on',!!act[t.id]);
+  }
+  requestAnimationFrame(frame);
+}
+updateUI(); refreshMsg();
+requestAnimationFrame(function(){
+  resize(); applyView('iso',true);
+  last=performance.now();
+  requestAnimationFrame(frame);
+});
+})();
+</script>
+
+</body></html>
